@@ -6,6 +6,8 @@
 #include <vector>
 #include <bullet/btBulletDynamicsCommon.h>	//you may need to change this
 
+using namespace std;
+
 camera cam;
 GLUquadricObj* quad;
 btDynamicsWorld* world;	//every physical object go to the world
@@ -28,9 +30,30 @@ btRigidBody* addSphere(float rad,float x,float y,float z,float mass)
 	btMotionState* motion=new btDefaultMotionState(t);	//set the position (and motion)
 	btRigidBody::btRigidBodyConstructionInfo info(mass,motion,sphere,inertia);	//create the constructioninfo, you can create multiple bodies with the same info
 	btRigidBody* body=new btRigidBody(info);	//let's create the body itself
+    body->setCcdMotionThreshold(1);
+    body->setCcdSweptSphereRadius(0.2f);
 	world->addRigidBody(body);	//and let the world know about it
 	bodies.push_back(body);	//to be easier to clean, I store them a vector
 	return body;
+}
+
+btRigidBody* addBox(float dim,float x,float y,float z,float mass)
+{
+    btTransform t;	//position and rotation
+    t.setIdentity();
+    t.setOrigin(btVector3(x,y,z));	//put it to x,y,z coordinates
+    btVector3 boxHalfExtents(dim/2.0,dim/2.0,dim/2.0);
+    btBoxShape* box=new btBoxShape(boxHalfExtents);	//it's a sphere, so use sphereshape
+    btVector3 inertia(0,0,0);	//inertia is 0,0,0 for static object, else
+    if(mass!=0.0)
+        box->calculateLocalInertia(mass,inertia);	//it can be determined by this function (for all kind of shapes)
+
+    btMotionState* motion=new btDefaultMotionState(t);	//set the position (and motion)
+    btRigidBody::btRigidBodyConstructionInfo info(mass,motion,box,inertia);	//create the constructioninfo, you can create multiple bodies with the same info
+    btRigidBody* body=new btRigidBody(info);	//let's create the body itself
+    world->addRigidBody(body);	//and let the world know about it
+    bodies.push_back(body);	//to be easier to clean, I store them a vector
+    return body;
 }
 
 void renderSphere(btRigidBody* sphere)
@@ -45,8 +68,69 @@ void renderSphere(btRigidBody* sphere)
 	t.getOpenGLMatrix(mat);	//OpenGL matrix stores the rotation and orientation
 	glPushMatrix();
 		glMultMatrixf(mat);	//multiplying the current matrix with it moves the object in place
-		gluSphere(quad,r,20,20);
+        gluSphere(quad,r,20,20);
 	glPopMatrix();
+}
+
+void renderBox(btRigidBody* box)
+{
+    if(box->getCollisionShape()->getShapeType()!=BOX_SHAPE_PROXYTYPE)	//only render, if it's a sphere
+        return;
+    glColor3f(1,0,0);
+    btVector3 half=((btBoxShape*)box->getCollisionShape())->getHalfExtentsWithMargin();
+    float dim = half.getX();
+    btTransform t;
+    box->getMotionState()->getWorldTransform(t);	//get the transform
+    btVector3 origin  = t.getOrigin();
+    float mat[16];
+    t.getOpenGLMatrix(mat);	//OpenGL matrix stores the rotation and orientation
+    glPushMatrix();
+        glMultMatrixf(mat);	//multiplying the current matrix with it moves the object in place
+        // White side - BACK
+        glBegin(GL_POLYGON);
+        glColor3f(   0.0,  1.0, 0.0 );
+        glVertex3f(  dim, -dim, dim );
+        glVertex3f(  dim,  dim, dim );
+        glVertex3f( -dim,  dim, dim );
+        glVertex3f( -dim, -dim, dim );
+        glEnd();
+
+        // Purple side - RIGHT
+        glBegin(GL_POLYGON);
+        glColor3f(  1.0,  0.0,  1.0 );
+        glVertex3f( dim, -dim, -dim );
+        glVertex3f( dim,  dim, -dim );
+        glVertex3f( dim,  dim,  dim );
+        glVertex3f( dim, -dim,  dim );
+        glEnd();
+
+        // Green side - LEFT
+        glBegin(GL_POLYGON);
+        glColor3f(   1.0,  1.0,  1.0 );
+        glVertex3f( -dim, -dim,  dim );
+        glVertex3f( -dim,  dim,  dim );
+        glVertex3f( -dim,  dim, -dim );
+        glVertex3f( -dim, -dim, -dim );
+        glEnd();
+
+        // Blue side - TOP
+        glBegin(GL_POLYGON);
+        glColor3f(   0.0,  0.0,  1.0 );
+        glVertex3f(  dim,  dim,  dim );
+        glVertex3f(  dim,  dim, -dim );
+        glVertex3f( -dim,  dim, -dim );
+        glVertex3f( -dim,  dim,  dim );
+        glEnd();
+
+        // Red side - BOTTOM
+        glBegin(GL_POLYGON);
+        glColor3f(   1.0,  0.0,  0.0 );
+        glVertex3f(  dim, -dim, -dim );
+        glVertex3f(  dim, -dim,  dim );
+        glVertex3f( -dim, -dim,  dim );
+        glVertex3f( -dim, -dim, -dim );
+        glEnd();
+    glPopMatrix();
 }
 
 //similar then renderSphere function
@@ -119,11 +203,13 @@ void display()
 			renderPlane(bodies[i]);
 		else if(bodies[i]->getCollisionShape()->getShapeType()==SPHERE_SHAPE_PROXYTYPE)
 			renderSphere(bodies[i]);
+        else if(bodies[i]->getCollisionShape()->getShapeType()==BOX_SHAPE_PROXYTYPE)
+            renderBox(bodies[i]);
 	}
 }
 
 
-int main()
+int main(int* pargc, char** argv )
 {
 	SDL_Init(SDL_INIT_EVERYTHING);
 	SDL_SetVideoMode(640,480,32,SDL_OPENGL);
@@ -132,6 +218,20 @@ int main()
 	bool running=true;
 	float angle=50;
 	init(angle);
+
+    float dim = 4.0;
+    float far = -70;
+    btRigidBody* box;
+    for(float y = 0.5; y < dim*15.0; y = y + dim)
+    {
+        for(float x = 0.5; x < dim*2.0; x = x + 1.1*dim)
+        {
+            box=addBox(dim,x,y,far,1.0);
+        }
+    }
+
+
+
 	while(running)
 	{
 		start=SDL_GetTicks();
@@ -153,9 +253,9 @@ int main()
 							break;
 						case SDLK_SPACE:
 						//if space is pressed, shoot a ball
-							btRigidBody* sphere=addSphere(1.0,cam.getLocation().x,cam.getLocation().y,cam.getLocation().z,1.0);
-							vector3d look=cam.getVector()*20;
-							sphere->setLinearVelocity(btVector3(look.x,look.y,look.z));
+                            btRigidBody* sphere=addSphere(2.0,cam.getLocation().x,cam.getLocation().y,cam.getLocation().z,1.0);
+                            vector3d look=cam.getVector()*2000;
+                            sphere->setLinearVelocity(btVector3(look.x,look.y,look.z));
 							break;
 					}
 					break;
